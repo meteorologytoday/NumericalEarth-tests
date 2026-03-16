@@ -11,4 +11,4 @@ CLAUDE.md
 .idea/
 env/
 *.nc
-
+*.jld2
