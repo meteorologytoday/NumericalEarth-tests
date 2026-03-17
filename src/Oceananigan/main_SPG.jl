@@ -10,42 +10,36 @@ using Base.Threads
 @printf("Print out thread information:\n")
 @printf("nthread = %d\n", nthreads())
 
-Δt=100seconds
-stop_time = 360days
+Δt=300seconds
+stop_time = 100days
 
 @printf("Grid generation...\n")
 H = 1000meters
 W = 1000kilometers
-Nx, Ny, Nz = 100, 100, 50
-#Nx, Ny, Nz = 32, 32, 10
+#Nx, Ny, Nz = 100, 100, 50
+
+Nx, Ny, Nz = 10, 10, 10
 W_x = W
 W_y = W
 
+@printf("Grid size: (%d, %d, %d)\n", Nx, Ny, Nz)
+
 grid = RectilinearGrid(
-    GPU(),
+    CPU(),
     size=(Nx, Ny, Nz),
     x=(0, W_x),
     y=(0, W_y),
     z=(-H, 0),
     halo=(4,4,4),
-    topology=(Periodic, Periodic, Bounded),
+    topology=(Bounded, Bounded, Bounded),
 )
 
-# A mountain in the ocean
-mountain_h₀ = 250meters
-mountain_width = 20kilometers
-cylindar_radius = 490kilometers
+# Make domain into a cylindar
+cylindar_radius = 450kilometers
 x_center = W_x/2
 y_center = W_y/2
-#hill(x, y) = mountain_h₀ * exp(-( (x-x_center)^2 + (y-y_center)^2) / 2mountain_width^2)
-
-#-H + hill(x, y)
-bottom(x, y) = ((x-x_center)^2 + (y-y_center)^2 > cylindar_radius^2) ? 0.0 : - H
-
-grid = ImmersedBoundaryGrid(grid, PartialCellBottom(bottom))
-x = xnodes(grid, Center())
-bottom_boundary = interior(grid.immersed_boundary.bottom_height, :, 1, 1)
-top_boundary = 0 * x
+#bottom(x, y) = ((x-x_center)^2 + (y-y_center)^2 > cylindar_radius^2) ? 0.0 : - H
+#grid = ImmersedBoundaryGrid(grid, PartialCellBottom(bottom))
 
 @printf("Create boundary conditions\n")
 const ρ0 = 1025.0
@@ -76,6 +70,43 @@ boundary_conditions = (
     ),
 )
 
+@printf("Add source and sink\n")
+parameters = (;
+    τ=10days,
+    x_center=W_x/2,
+    y_center=W_y/2,
+    boundary_forcing_radius=450kilometers,
+    center_forcing_radius=100kilometers,
+    H=H,
+)
+
+#@inline function heat_source(x, y, z, t, T, p)
+#    distance_square = (x-p.x_center)^2 + (y-p.y_center)^2
+#    mask = distance_square > p.boundary_forcing_radius^2
+#    return mask * (-(T - 25.0) * exp(z / p.H) / p.τ)
+#end
+
+@inline function heat_source(x, y, z, t, T, p)
+    @printf("T = %f\n", T)
+    return - (T - 20) / p.τ
+end
+
+
+@inline function salt_source(x, y, z, t, S, p)
+    distance_square = (x-p.x_center)^2 + (y-p.y_center)^2
+    
+    if (distance_square > p.boundary_forcing_radius^2)
+        return - (S - 40.0) * exp(z/p.H) / p.τ
+    elseif (distance_square < p.center_forcing_radius^2)
+        return - (S - 35.0) * exp(z/p.H) / p.τ
+    else
+        return 0.0
+    end
+end
+
+S_forcing = Forcing(salt_source, parameters=parameters, field_dependencies=:S)
+T_forcing = Forcing(heat_source, parameters=parameters, field_dependencies=:T)
+
 @printf("Model creation\n")
 model = HydrostaticFreeSurfaceModel(
     grid;
@@ -83,12 +114,13 @@ model = HydrostaticFreeSurfaceModel(
     tracers = (:T, :S),
     momentum_advection = WENO(),
     tracer_advection = WENO(),
-    boundary_conditions = boundary_conditions,
+#    boundary_conditions = boundary_conditions,
+    forcing=(T=T_forcing,),# S=S_forcing,),
 )
 
 @printf("Set initial conditions\n")
-ϵ(x, y, z) = 2rand() - 1
-Tᵢ(λ, φ, z) = 30 + z/H * 15
+ϵ(x, y, z) = 0.0 #2rand() - 1
+Tᵢ(λ, φ, z) = 30 #+ z/H * 15
 Sᵢ(λ, φ, z) = 28
 set!(model, T=Tᵢ, S=Sᵢ, u=ϵ, v=ϵ)
 
@@ -98,12 +130,12 @@ progress(sim) = @printf("Iter: % 6d, sim time: % 1.3f, wall time: % 10s, Δt: % 
                         iteration(sim), time(sim), prettytime(sim.run_wall_time),
                         sim.Δt, AdvectiveCFL(sim.Δt)(sim.model), DiffusiveCFL(sim.Δt)(sim.model))
 
-simulation.callbacks[:progress] = Callback(progress, IterationInterval(1))
+simulation.callbacks[:progress] = Callback(progress, IterationInterval(100))
 
 simulation.output_writers[:checkpointer] = Checkpointer(model, 
     schedule = TimeInterval(360days),
     prefix = "my_checkpoint",       # Filename prefix
-    cleanup = false,                  # Keep only the most recent checkpoint
+    cleanup = false,                # Keep only the most recent checkpoint
 )
 
 @printf("Setup output writer\n")
@@ -111,7 +143,7 @@ save_fields_interval = 5days
 T = model.tracers.T
 S = model.tracers.S
 filename_prefix = "output_thermal"
-simulation.output_writers[:full] = NetCDFWriter(
+simulation.output_writers[:thermal] = NetCDFWriter(
     model, (;T,S), filename=filename_prefix * ".nc",
     schedule = TimeInterval(save_fields_interval),
     overwrite_existing = true,
@@ -121,12 +153,11 @@ u = model.velocities.u
 v = model.velocities.v
 w = model.velocities.w
 filename_prefix = "output_momentum"
-simulation.output_writers[:full] = NetCDFWriter(
+simulation.output_writers[:momentum] = NetCDFWriter(
     model, (;u, v, w), filename=filename_prefix * ".nc",
     schedule = TimeInterval(save_fields_interval),
     overwrite_existing = true,
 )
-
 
 @printf("Model information:\n")
 display(model)
@@ -134,26 +165,4 @@ display(model)
 display(simulation)
 @printf("Run model\n")
 run!(simulation)
-
-exit()
-
-
-
-#model = NonhydrostaticModel(; grid, advection=WENO())
-#ϵ(x, y) = 2rand() - 1
-#set!(model, u=ϵ, v=ϵ)
-#simulation = Simulation(model; Δt=0.01, stop_time=4)
-#run!(simulation)
-
-using CairoMakie
-
-fig = Figure(size = (700, 200))
-ax = Axis(fig[1, 1],
-          xlabel="x [km]",
-          ylabel="z [m]",
-          limits=((0, grid.Lx/W), (-grid.Lz, 0)))
-
-band!(ax, x/1e3, bottom_boundary, top_boundary, color = :mediumblue)
-
-fig
 

@@ -22,4 +22,4 @@ srun -n1 julia -e 'using CUDA; println(CUDA.functional())'
 echo "Print CUDA.versioninfo() in Julia"
 srun -n1 julia -e 'using CUDA; CUDA.versioninfo()'
 
-time srun -n1 --unbuffered julia --threads $SLURM_CPUS_PER_TASK src/SPG.jl
+time srun -n1 --unbuffered julia --threads $SLURM_CPUS_PER_TASK src/Oceananigan/main_SPG.jl
