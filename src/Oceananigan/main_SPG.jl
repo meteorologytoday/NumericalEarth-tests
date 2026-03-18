@@ -5,27 +5,21 @@ using Oceananigans.Units
 using Oceananigans.OutputWriters
 using CUDA
 
-using Base.Threads
-
-@printf("Print out thread information:\n")
-@printf("nthread = %d\n", nthreads())
-
-Δt=300seconds
-stop_time = 100days
+Δt=100seconds
+stop_time = 360days * 20
 
 @printf("Grid generation...\n")
 H = 1000meters
 W = 1000kilometers
-#Nx, Ny, Nz = 100, 100, 50
+Nx, Ny, Nz = 100, 100, 50
 
-Nx, Ny, Nz = 10, 10, 10
 W_x = W
 W_y = W
 
 @printf("Grid size: (%d, %d, %d)\n", Nx, Ny, Nz)
 
 grid = RectilinearGrid(
-    CPU(),
+    GPU(),
     size=(Nx, Ny, Nz),
     x=(0, W_x),
     y=(0, W_y),
@@ -56,12 +50,14 @@ S_flux(x, y, t) = -F * S0
 τv(x, y, t) = τy / ρ0
 
 boundary_conditions = (
+#=
     T = FieldBoundaryConditions(
         top = FluxBoundaryCondition(Q_T)
     ),
     S = FieldBoundaryConditions(
         top = FluxBoundaryCondition(S_flux)
     ),
+=#
     u = FieldBoundaryConditions(
         top = FluxBoundaryCondition(τu)
     ),
@@ -72,7 +68,7 @@ boundary_conditions = (
 
 @printf("Add source and sink\n")
 parameters = (;
-    τ=10days,
+    τ=60days,
     x_center=W_x/2,
     y_center=W_y/2,
     boundary_forcing_radius=450kilometers,
@@ -80,17 +76,17 @@ parameters = (;
     H=H,
 )
 
-#@inline function heat_source(x, y, z, t, T, p)
-#    distance_square = (x-p.x_center)^2 + (y-p.y_center)^2
-#    mask = distance_square > p.boundary_forcing_radius^2
-#    return mask * (-(T - 25.0) * exp(z / p.H) / p.τ)
-#end
-
 @inline function heat_source(x, y, z, t, T, p)
-    @printf("T = %f\n", T)
-    return - (T - 20) / p.τ
-end
+    distance_square = (x-p.x_center)^2 + (y-p.y_center)^2
+    if (distance_square > p.boundary_forcing_radius^2)
+        return - (T - 30.0) * exp(z/p.H) / p.τ
+    elseif (distance_square < p.center_forcing_radius^2)
+        return - (T - 10.0) * exp(z/p.H) / p.τ
+    else
+        return 0.0
+    end
 
+end
 
 @inline function salt_source(x, y, z, t, S, p)
     distance_square = (x-p.x_center)^2 + (y-p.y_center)^2
@@ -112,15 +108,16 @@ model = HydrostaticFreeSurfaceModel(
     grid;
     buoyancy = SeawaterBuoyancy(),
     tracers = (:T, :S),
+    coriolis = BetaPlane(f₀=1e-4, β=1e-11),
     momentum_advection = WENO(),
     tracer_advection = WENO(),
 #    boundary_conditions = boundary_conditions,
-    forcing=(T=T_forcing,),# S=S_forcing,),
+    forcing=(T=T_forcing, S=S_forcing,),
 )
 
 @printf("Set initial conditions\n")
-ϵ(x, y, z) = 0.0 #2rand() - 1
-Tᵢ(λ, φ, z) = 30 #+ z/H * 15
+ϵ(x, y, z) = 2rand() - 1
+Tᵢ(λ, φ, z) = 30 + z/H * 15
 Sᵢ(λ, φ, z) = 28
 set!(model, T=Tᵢ, S=Sᵢ, u=ϵ, v=ϵ)
 
@@ -145,7 +142,7 @@ S = model.tracers.S
 filename_prefix = "output_thermal"
 simulation.output_writers[:thermal] = NetCDFWriter(
     model, (;T,S), filename=filename_prefix * ".nc",
-    schedule = TimeInterval(save_fields_interval),
+    schedule = AveragedTimeInterval(save_fields_interval),
     overwrite_existing = true,
 )
 
@@ -155,7 +152,7 @@ w = model.velocities.w
 filename_prefix = "output_momentum"
 simulation.output_writers[:momentum] = NetCDFWriter(
     model, (;u, v, w), filename=filename_prefix * ".nc",
-    schedule = TimeInterval(save_fields_interval),
+    schedule = AveragedTimeInterval(save_fields_interval),
     overwrite_existing = true,
 )
 
