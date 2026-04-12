@@ -9,18 +9,12 @@ using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OutputWriters
 
+using XESMF
 using SpeedyWeather
-
 using NumericalEarth
 
 Δt=100seconds
 stop_time = 360days
-
-@printf("Atmosphere model setup.\n")
-#spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers=4, Grid=FullClenshawGrid)
-spectral_grid = SpeedyWeather.SpectralGrid(; trunc=31, nlayers=4, Grid=FullGaussianGrid, dealiasing=3, architecture=SpeedyWeather.GPU())
-atmosphere = atmosphere_simulation(spectral_grid; output=true)
-atmosphere.model.output.output_dt = Hour(3)
 
 @printf("Ocean model setup.\n")
 H = 1000meters
@@ -29,12 +23,12 @@ z = ExponentialDiscretization(Nz, -H, 0)
 bottom(x, y) = - H
 
 grid = TripolarGrid(
-    Oceananigans.GPU();
+    Oceananigans.CPU();
     size=(Nx, Ny, Nz),
     z,
     halo=(3, 3, 3),
 )
-grid = ImmersedBoundaryGrid(grid, PartialCellBottom(bottom))
+#grid = ImmersedBoundaryGrid(grid, PartialCellBottom(bottom))
 
 momentum_advection   = VectorInvariant()
 tracer_advection     = WENO(order=3)
@@ -48,20 +42,28 @@ ocean = ocean_simulation(
     momentum_advection,
     tracer_advection,
     free_surface,
-    closure = closures
+    closure = closures,
 )
 
-#@printf("Sea ice model setup.\n")
-#sea_ice = sea_ice_simulation(grid, ocean; advection=WENO(order=3))
+@printf("Sea ice model setup.\n")
+sea_ice = sea_ice_simulation(grid, ocean; advection=WENO(order=3))
 
+@printf("Atmosphere model setup.\n")
+#spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers=4, Grid=FullClenshawGrid)
+spectral_grid = SpeedyWeather.SpectralGrid(; trunc=31, nlayers=4, Grid=FullGaussianGrid, dealiasing=3, architecture=SpeedyWeather.CPU())
+atmosphere = atmosphere_simulation(spectral_grid; output=true)
+atmosphere.model.output.output_dt = Hour(3)
 
 @printf("Radiation setup.\n")
-radiation = Radiation(ocean_emissivity=0.0)#, sea_ice_emissivity=0.0)
+radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
 
 @printf("Couple models.\n")
-earth_model = EarthSystemModel(atmosphere, ocean; radiation)
+earth_model = EarthSystemModel(atmosphere, ocean, sea_ice; radiation)
 earth_model_Δt = 2 * convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec)
 earth = Oceananigans.Simulation(earth_model; Δt=earth_model_Δt, stop_time=5days)
+
+@printf("earth_model_Δt = %f\n", earth_model_Δt)
+
 
 @printf("Setup output writers.")
 outputs = merge(ocean.model.velocities, ocean.model.tracers)
@@ -72,20 +74,20 @@ sea_ice_fields = merge(
     (; h=sea_ice.model.ice_thickness, ℵ=sea_ice.model.ice_concentration)
 )
 =#
-ocean.output_writers[:free_surf] = NetCDFWriter(ocean.model, (; η=ocean.model.free_surface.displacement);
+ocean.output_writers[:free_surf] = JLD2Writer(ocean.model, (; η=ocean.model.free_surface.displacement);
                                               overwrite_existing=true,
                                               schedule=TimeInterval(3hours),
                                               including = [:grid],
                                               filename="ocean_free_surface.nc")
 
-ocean.output_writers[:surface] = NetCDFWriter(ocean.model, outputs;
+ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
                                             overwrite_existing=true,
                                             schedule=TimeInterval(3hours),
                                             including = [:grid],
                                             filename="ocean_surface_fields.nc",
                                             indices=(:, :, grid.Nz))
 #=
-sea_ice.output_writers[:fields] = NetCDFWriter(sea_ice.model, sea_ice_fields;
+sea_ice.output_writers[:fields] = JLD2Writer(sea_ice.model, sea_ice_fields;
                                              overwrite_existing=true,
                                              schedule=TimeInterval(3hours),
                                              including = [:grid],
@@ -106,7 +108,7 @@ Jˢⁱᵒ  = earth.model.interfaces.sea_ice_ocean_interface.fluxes.salt
 fluxes = (; 𝒬ᵀᵃᵒ, 𝒬ᵛᵃᵒ, τˣᵃᵒ, τʸᵃᵒ, 𝒬ᵀᵃⁱ, 𝒬ᵛᵃⁱ, τˣᵃⁱ, τʸᵃⁱ, 𝒬ⁱᵒ, Jˢⁱᵒ)
 =#
 
-ocean.output_writers[:fluxes] = NetCDFWriter(earth.model.ocean.model, fluxes;
+ocean.output_writers[:fluxes] = JLD2Writer(earth.model.ocean.model, fluxes;
                                            overwrite_existing=true,
                                            schedule=TimeInterval(3hours),
                                            including = [:grid],
