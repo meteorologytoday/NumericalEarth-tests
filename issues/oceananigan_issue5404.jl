@@ -9,7 +9,7 @@ grid = RectilinearGrid(GPU();
     z = (-100, 0)
 )
 @inline bottom(x, y) = -100
-grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom))
+#grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom))
 
 @inline relax(x, y, z, t, T, p) = - p.rate
 params = (

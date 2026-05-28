@@ -1,4 +1,7 @@
 using Printf
+
+@printf("Loading Julia libraries...\n")
+
 using Statistics
 using Dates
 
@@ -13,44 +16,51 @@ using XESMF
 using SpeedyWeather
 using NumericalEarth
 
+@printf("Libaries loaded.\n")
+
 Δt=100seconds
 stop_time = 360days
 
 @printf("Ocean model setup.\n")
-H = 1000meters
-Nx, Ny, Nz = 60, 30, 10
-z = ExponentialDiscretization(Nz, -H, 0)
-bottom(x, y) = - H
 
-grid = TripolarGrid(
-    Oceananigans.CPU();
-    size=(Nx, Ny, Nz),
-    z,
-    halo=(3, 3, 3),
-)
-#grid = ImmersedBoundaryGrid(grid, PartialCellBottom(bottom))
+Nx = 30
+Ny = 30
+Nz = 10
+z = ExponentialDiscretization(Nz, -2000, 0)
+grid = TripolarGrid(Oceananigans.CPU(); size=(Nx, Ny, Nz), z, halo=(6, 6, 5))
 
-momentum_advection   = VectorInvariant()
-tracer_advection     = WENO(order=3)
-free_surface         = SplitExplicitFreeSurface(grid; substeps=40)
-catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
-eddy_closure         = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3)
-viscous_closure      = Oceananigans.TurbulenceClosures.HorizontalScalarBiharmonicDiffusivity(ν=1e12)
-closures             = (catke_closure, eddy_closure, viscous_closure)
-ocean = ocean_simulation(
-    grid;
-    momentum_advection,
-    tracer_advection,
-    free_surface,
-    closure = closures,
-)
+momentum_advection = WENOVectorInvariant(order=3)
+tracer_advection   = Centered()
 
-@printf("Sea ice model setup.\n")
-sea_ice = sea_ice_simulation(grid, ocean; advection=WENO(order=3))
+free_surface = SplitExplicitFreeSurface(grid; substeps=30)
+
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
+                                       DiffusiveFormulation
+
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity
+
+eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=DiffusiveFormulation())
+vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
+
+closure = (eddy_closure, vertical_mixing)
+
+ocean = ocean_simulation(grid;
+                         momentum_advection,
+                         tracer_advection,
+                         closure,
+                         free_surface)
+
+# Initialize with uniform T≈15°C and S=35 PSU so SST ≈ 288 K matches the
+# Jablonowski atmosphere surface temperature, avoiding a large initial air-sea ΔT.
+# Also seed CATKE TKE to avoid 0/N² degeneracy with uniform stratification.
+Oceananigans.set!(ocean.model, T=15.0, S=35.0, e=1e-6)
+
+#@printf("Sea ice model setup.\n")
+#sea_ice = sea_ice_simulation(grid, ocean; advection=WENO(order=3))
+sea_ice = NumericalEarth.default_sea_ice()
 
 @printf("Atmosphere model setup.\n")
-#spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers=4, Grid=FullClenshawGrid)
-spectral_grid = SpeedyWeather.SpectralGrid(; trunc=31, nlayers=4, Grid=FullGaussianGrid, dealiasing=3, architecture=SpeedyWeather.CPU())
+spectral_grid = SpeedyWeather.SpectralGrid(; trunc=31, nlayers=4, Grid=FullClenshawGrid, dealiasing=3, architecture=SpeedyWeather.CPU())
 atmosphere = atmosphere_simulation(spectral_grid; output=true)
 atmosphere.model.output.output_dt = Hour(3)
 
@@ -124,7 +134,7 @@ function progress(sim)
     uo, vo, wo = ocean.model.velocities
     
     uamax = (maximum(abs, ua), maximum(abs, va))
-    uomax = (maximum(abs, uo), maximum(abs, vo), maximum(abs, wo))
+    uomax = (maximum(abs, interior(uo)), maximum(abs, interior(vo)), maximum(abs, interior(wo)))
     
     step_time = 1e-9 * (time_ns() - wall_time[])
     

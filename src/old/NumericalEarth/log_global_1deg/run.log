@@ -1,0 +1,49 @@
+┌ Error: CUDA.jl could not find an appropriate CUDA runtime to use.
+│ 
+│ CUDA.jl's JLLs were precompiled without an NVIDIA driver present.
+│ This can happen when installing CUDA.jl on an HPC log-in node,
+│ or in a container. In that case, you need to specify which CUDA
+│ version to use at run time by calling `CUDA.set_runtime_version!`
+│ or provisioning the preference it sets at compile time.
+│ 
+│ If you are not running in a container or on an HPC log-in node,
+│ try re-compiling the CUDA runtime JLL and re-loading CUDA.jl:
+│      pkg = Base.PkgId(Base.UUID("76a88914-d11a-5bdc-97e0-2f5a05c973a2"),
+│                       "CUDA_Runtime_jll")
+│      Base.compilecache(pkg)
+│      # re-start Julia and re-load CUDA.jl
+│ 
+│ For more details, refer to the CUDA.jl documentation at
+│ https://cuda.juliagpu.org/stable/installation/overview/
+└ @ CUDA ~/.julia/packages/CUDA/FJf6p/src/initialization.jl:113
+[ Info: Interpolation passes of bathymetry size (21600, 10800, 1) onto a OrthogonalSphericalShellGrid target grid of size (120, 60, 10):
+[ Info:     pass 1 to size (20168, 10084, 1)
+[ Info:     pass 2 to size (18736, 9368, 1)
+[ Info:     pass 3 to size (17304, 8652, 1)
+[ Info:     pass 4 to size (15872, 7936, 1)
+[ Info:     pass 5 to size (14440, 7220, 1)
+[ Info:     pass 6 to size (13008, 6504, 1)
+[ Info:     pass 7 to size (11576, 5788, 1)
+[ Info:     pass 8 to size (10144, 5072, 1)
+[ Info:     pass 9 to size (8712, 4356, 1)
+[ Info:     pass 10 to size (7280, 3640, 1)
+[ Info:     pass 11 to size (5848, 2924, 1)
+[ Info:     pass 12 to size (4416, 2208, 1)
+[ Info:     pass 13 to size (2984, 1492, 1)
+[ Info:     pass 14 to size (1552, 776, 1)
+[ Info:     pass 15 to size (120, 60, 1)
+[ Info: Saved bathymetry cache to /home/tienyiao/.julia/scratchspaces/904d977b-046a-4731-8b86-9235c0d1ef02/bathymetry_cache/bathymetry_120x60_0.0_360.0_-90.0_90.0_92244512.jld2
+ERROR: LoadError: UndefVarError: `MetadataSet` not defined in `Main`
+Suggestion: check for spelling errors or missing imports.
+Stacktrace:
+ [1] top-level scope
+   @ ~/projects_local/project_numerical_earth/NumericalEarth-tests/src/NumericalEarth/main_global_1deg.jl:76
+ [2] include(mod::Module, _path::String)
+   @ Base ./Base.jl:306
+ [3] exec_options(opts::Base.JLOptions)
+   @ Base ./client.jl:317
+ [4] _start()
+   @ Base ./client.jl:550
+in expression starting at /home/tienyiao/projects_local/project_numerical_earth/NumericalEarth-tests/src/NumericalEarth/main_global_1deg.jl:76
+Loading packages...
+Done
