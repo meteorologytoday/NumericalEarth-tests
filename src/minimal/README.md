@@ -3,6 +3,8 @@
 Minimal working scripts for coupled atmosphere-ocean simulations using
 SpeedyWeather and Oceananigans via NumericalEarth.
 
+Notice: Currently it is aquaplanet, but SpeedyWeather uses its default orography (likely Earth).
+
 ## Tested Versions
 
 | Package              | Version  |
