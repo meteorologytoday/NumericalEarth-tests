@@ -16,6 +16,9 @@ spectral_grid = SpectralGrid(trunc=31, nlayers=4, Grid=FullGaussianGrid)
 land_sea_mask = AquaPlanetMask(spectral_grid)
 orography     = NoOrography(spectral_grid)
 
+# This is a workaround to pass in orography because NumericalEarth Speedy does not support
+# orography as keyword.
+#
 # Build atmosphere manually so we can pass orography and land_sea_mask explicitly.
 # This replicates what atmosphere_simulation() does internally.
 let
