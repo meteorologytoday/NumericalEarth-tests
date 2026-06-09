@@ -14,7 +14,38 @@ using NumericalEarth
 # Atmosphere model
 spectral_grid = SpectralGrid(trunc=31, nlayers=4, Grid=FullGaussianGrid)
 land_sea_mask = AquaPlanetMask(spectral_grid)
-atmosphere = atmosphere_simulation(spectral_grid; output_interval=Hour(3))
+orography     = NoOrography(spectral_grid)
+
+# Build atmosphere manually so we can pass orography and land_sea_mask explicitly.
+# This replicates what atmosphere_simulation() does internally.
+let
+    humidity_flux_ocean   = SpeedyWeather.PrescribedOceanHumidityFlux(spectral_grid)
+    humidity_flux_land    = SpeedyWeather.SurfaceLandHumidityFlux(spectral_grid)
+    surface_humidity_flux = SpeedyWeather.SurfaceHumidityFlux(ocean=humidity_flux_ocean, land=humidity_flux_land)
+    ocean_heat_flux       = SpeedyWeather.PrescribedOceanHeatFlux(spectral_grid)
+    land_heat_flux        = SpeedyWeather.SurfaceLandHeatFlux(spectral_grid)
+    surface_heat_flux     = SpeedyWeather.SurfaceHeatFlux(ocean=ocean_heat_flux, land=land_heat_flux)
+
+    global atmosphere_model = SpeedyWeather.PrimitiveWetModel(
+        spectral_grid;
+        land_sea_mask,
+        orography,
+        surface_heat_flux,
+        surface_humidity_flux,
+        ocean   = SpeedyWeather.PrescribedOcean(),
+        sea_ice = nothing,
+    )
+end
+atmosphere_model.output.interval = Second(3 * 3600)
+global atmosphere = SpeedyWeather.initialize!(atmosphere_model)
+SpeedyWeather.initialize!(atmosphere; output=true)
+
+# Mirror what atmosphere_simulation does: pre-compute parameterization tendencies for coupling
+let
+    vars, atmos_model = SpeedyWeather.unpack(atmosphere)
+    SpeedyWeather.reset_tendencies!(vars)
+    atmos_model.dynamics_only || SpeedyWeather.parameterization_tendencies!(vars, atmos_model)
+end
 
 @printf("Constructing ocean model...\n")
 Nx, Ny, Nz = 60, 30, 8

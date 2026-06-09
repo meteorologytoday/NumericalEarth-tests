@@ -3,8 +3,6 @@
 Minimal working scripts for coupled atmosphere-ocean simulations using
 SpeedyWeather and Oceananigans via NumericalEarth.
 
-Notice: Currently it is aquaplanet, but SpeedyWeather uses its default orography (likely Earth).
-
 ## Tested Versions
 
 | Package              | Version  |
@@ -31,6 +29,31 @@ Activate the project environment before running any script:
 ```
 julia --project=<path-to-NumericalEarth-tests> <script>.jl
 ```
+
+## Notes
+
+### Flat orography in the coupled model (`03_coupled_aquaplanet.jl`)
+`NumericalEarth.atmosphere_simulation()` does not expose an `orography` kwarg, so
+`NoOrography` cannot be passed through it. The script works around this by constructing
+the `PrimitiveWetModel` manually — replicating the internals of `atmosphere_simulation`
+with the addition of `land_sea_mask` and `orography` kwargs:
+
+```julia
+orography     = NoOrography(spectral_grid)
+land_sea_mask = AquaPlanetMask(spectral_grid)
+
+atmosphere_model = SpeedyWeather.PrimitiveWetModel(
+    spectral_grid;
+    land_sea_mask, orography,
+    surface_heat_flux, surface_humidity_flux,
+    ocean = SpeedyWeather.PrescribedOcean(), sea_ice = nothing,
+)
+atmosphere = SpeedyWeather.initialize!(atmosphere_model)
+SpeedyWeather.initialize!(atmosphere; output=true)
+```
+
+The parameterization tendencies are also pre-computed manually to mirror what
+`atmosphere_simulation` does internally for coupling initialization.
 
 ## Known Issues
 
