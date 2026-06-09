@@ -16,8 +16,6 @@ spectral_grid = SpectralGrid(trunc=31, nlayers=4, Grid=FullGaussianGrid)
 land_sea_mask = AquaPlanetMask(spectral_grid)
 atmosphere = atmosphere_simulation(spectral_grid; output_interval=Hour(3))
 
-
-
 @printf("Constructing ocean model...\n")
 Nx, Ny, Nz = 60, 30, 8
 grid = LatitudeLongitudeGrid(;
@@ -44,7 +42,6 @@ ocean = ocean_simulation(
 Tᵢ(x, y, z) = T_target(y) * (1 + 0.01z / 2000)
 Sᵢ(x, y, z) = 35.0
 Oceananigans.set!(ocean.model, T=Tᵢ, S=Sᵢ)
-
 
 #@printf("Contructing sea ice model... \n")
 #sea_ice = sea_ice_simulation(grid, ocean; advection=WENO(order=3))
